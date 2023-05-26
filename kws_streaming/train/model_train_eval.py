@@ -141,8 +141,8 @@ def main(_):
 
   if flags.train:
     # Create model folders where logs and model will be stored
-    os.makedirs(flags.train_dir)
-    os.mkdir(flags.summaries_dir)
+    os.makedirs(flags.train_dir, exist_ok=True)
+    os.makedirs(flags.summaries_dir, exist_ok=True)
 
     # Model training
     train.train(flags)

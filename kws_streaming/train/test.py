@@ -21,11 +21,12 @@ import os
 from absl import logging
 import numpy as np
 import tensorflow.compat.v1 as tf
-import kws_streaming.data.input_data as input_data
 from kws_streaming.layers import modes
 from kws_streaming.models import models
 from kws_streaming.models import utils
-
+import kws_streaming.data.input_data as input_data
+import kws_streaming.data.MLSW_data as MLSW_data
+import kws_streaming.data.PATE_data as PATE_data
 
 def run_stream_inference(flags, model_stream, inp_audio):
   """Runs streaming inference.
@@ -244,7 +245,8 @@ def tf_non_stream_model_accuracy(
   sess = tf.Session(config=config)
   tf.keras.backend.set_session(sess)
 
-  audio_processor = input_data.AudioProcessor(flags)
+  DatasetClass = eval(flags.dataset_class)
+  audio_processor = DatasetClass(flags)
 
   set_size = audio_processor.set_size('testing')
   tf.keras.backend.set_learning_phase(0)
@@ -323,7 +325,8 @@ def tf_stream_state_internal_model_accuracy(
   logging.info('tf stream model state internal without state resetting'
                'between testing sequences')
 
-  audio_processor = input_data.AudioProcessor(flags)
+  DatasetClass = eval(flags.dataset_class)
+  audio_processor = DatasetClass(flags)
   set_size = audio_processor.set_size('testing')
   set_size = np.minimum(max_test_samples, set_size)
   inference_batch_size = 1
@@ -420,7 +423,8 @@ def tf_stream_state_external_model_accuracy(
   sess = tf.Session(config=config)
   tf.keras.backend.set_session(sess)
 
-  audio_processor = input_data.AudioProcessor(flags)
+  DatasetClass = eval(flags.dataset_class)
+  audio_processor = DatasetClass(flags)
   set_size = audio_processor.set_size('testing')
   set_size = np.minimum(max_test_samples, set_size)
   inference_batch_size = 1
@@ -556,7 +560,8 @@ def tflite_stream_state_external_model_accuracy(
   logging.info('tflite stream model state external with reset_state %d',
                reset_state)
 
-  audio_processor = input_data.AudioProcessor(flags)
+  DatasetClass = eval(flags.dataset_class)
+  audio_processor = DatasetClass(flags)
 
   set_size = audio_processor.set_size('testing')
 
@@ -660,7 +665,8 @@ def tflite_non_stream_model_accuracy(
   tf.keras.backend.set_session(sess)
   path = os.path.join(flags.train_dir, folder)
 
-  audio_processor = input_data.AudioProcessor(flags)
+  DatasetClass = eval(flags.dataset_class)
+  audio_processor = DatasetClass(flags)
 
   set_size = audio_processor.set_size('testing')
 

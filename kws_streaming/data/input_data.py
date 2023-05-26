@@ -31,6 +31,8 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow.compat.v1 as tf
 from kws_streaming.layers import modes
 
+from kws_streaming.models import models
+
 # pylint: disable=g-direct-tensorflow-import
 # below ops are on a depreciation path in tf, so we temporarily disable pylint
 # to be able to import them: TODO(rybakov) - use direct tf
@@ -39,6 +41,8 @@ from tensorflow.python.ops import gen_audio_ops as audio_ops
 from tensorflow.python.ops import io_ops
 from tensorflow.python.platform import gfile
 from tensorflow.python.util import compat
+
+import copy
 
 tf.disable_eager_execution()
 
@@ -166,7 +170,6 @@ def save_wav_file(filename, wav_data, sample_rate):
             sample_rate_placeholder: sample_rate,
             wav_data_placeholder: np.reshape(wav_data, (-1, 1))
         })
-
 
 class AudioProcessor(object):
   """Handles loading, partitioning, and preparing audio training data.
@@ -809,3 +812,29 @@ class AudioProcessor(object):
         label_index = self.word_to_index[sample['label']]
         labels.append(words_list[label_index])
     return data, labels
+
+def flatten_model(model, layers):
+  if hasattr(model, 'layers'):
+    for layer in model.layers:
+      flatten_model(layer, layers)
+  else:
+    layers.append(model)
+
+class LatentProcessor(AudioProcessor):
+  def __init__(self, flags):
+    flags_copy = copy.deepcopy(flags)
+    flags_copy.data_dir = flags.source_path
+    flags_copy.split_data = 1
+    flags_copy.wanted_words = 'yes,no,up,down,left,right,on,off,stop,go'
+    super().__init__(flags_copy)
+    
+    model = models.MODELS[flags.model_name](flags)
+    model.load_weights(flags.start_checkpoint, by_name=True, skip_mismatch=True)
+    model.trainable = False
+    
+    output = model.layers[flags.AWC_layer_index].output
+    self.model = tf.keras.Model(inputs=model.input, outputs=output)
+  def get_data(self, *args, **kwargs):
+    data, _ = super(LatentProcessor, self).get_data(*args, **kwargs)
+    label = self.model.predict(data)
+    return data, label

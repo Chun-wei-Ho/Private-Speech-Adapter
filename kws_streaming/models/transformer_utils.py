@@ -133,6 +133,9 @@ class KWSTransformer(tf.keras.Model):
         prenorm=False,
         distill_token=False,
         approximate_gelu=False,
+        adapter_dim=-1,
+        fix_transformer=False,
+        adapter_connection=None,
     ):
         super(KWSTransformer, self).__init__()
         self.d_model = d_model
@@ -149,6 +152,22 @@ class KWSTransformer(tf.keras.Model):
             TransformerBlock(d_model, num_heads, mlp_dim, dropout, prenorm, approximate_gelu)
             for _ in range(num_layers)
         ]
+        assert adapter_connection in (None, "neighboring", "unet", "densenet")
+        self.adapter_connection = adapter_connection
+
+        if fix_transformer:
+            for layer in self.layers:
+                layer.trainable = False
+        if adapter_dim > 0:
+            self.adapters = []
+            for _ in range(num_layers):
+                adapters = tf.keras.Sequential()
+                adapters.add(Dense(adapter_dim, kernel_initializer=TruncatedNormal(mean=0., stddev=TRUNC_STD),
+                            bias_initializer=Zeros()))
+                adapters.add(tf.keras.layers.LeakyReLU())
+                adapters.add(Dense(d_model, kernel_initializer=TruncatedNormal(mean=0., stddev=TRUNC_STD),
+                             bias_initializer=Zeros()))
+                self.adapters.append(adapters)
 
 
     def extract_patches(self, images):
@@ -182,7 +201,18 @@ class KWSTransformer(tf.keras.Model):
         x = tf.concat(tokens, axis=1)
         x = x + self.pos_emb
 
-        for layer in self.enc_layers:
+        adapter_outputs = []
+        for i, layer in enumerate(self.enc_layers):
+            if hasattr(self, 'adapters'):
+                if self.adapter_connection == 'neighboring' and i != 0:
+                    adapter_outputs.append(self.adapters[i](x + adapter_outputs[-1]))
+                elif self.adapter_connection == 'unet' and i >= len(self.adapters) // 2:
+                    adapter_outputs.append(self.adapters[i](x + adapter_outputs[len(self.adapters)-i-1]))
+                elif self.adapter_connection == 'densenet' and i != 0:
+                    adapter_outputs.append(self.adapters[i](x + tf.reduce_sum(adapter_outputs, axis=0)))
+                else:
+                    adapter_outputs.append(self.adapters[i](x))
+                x += adapter_outputs[-1]
             x, _ = layer(x, training)
 
         # First (class token) is used for classification, second for distillation (if enabled)

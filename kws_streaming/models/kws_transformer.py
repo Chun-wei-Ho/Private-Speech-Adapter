@@ -92,6 +92,20 @@ def model_parameters(parser_nn):
       type=int,
       default=False,
       help='If True, use approximate GELU activation (useful for TFLite conversion)')
+  parser_nn.add_argument(
+      '--fix_transformer', action='store_true',
+      help='If True, fixed the pre-trained transformer weights except for adapters',)
+  parser_nn.add_argument(
+      '--reprogram', type=str, default='',
+      choices=['trainable_noise', 'conv'],
+    )
+  parser_nn.add_argument(
+    '--adapter_connection', type=str, default=None, choices=["neighboring", "unet", "densenet"])
+  parser_nn.add_argument(
+      '--adapter_dim',
+      type=int,
+      default=-1,
+      help='If set, use residual adapter')
 
 
 def extract_patches(images, patch_size_t, patch_size_f):
@@ -106,6 +120,25 @@ def extract_patches(images, patch_size_t, patch_size_f):
     patches = tf.reshape(patches, [batch_size, -1, patch_size_f * patch_size_t])
     return patches
 
+class TrainableNoiseLayer(tf.keras.layers.Layer):
+  def __init__(self, shape):
+    super().__init__()
+    self.shape = shape
+  def build(self, input_shape):
+    self.noise = self.add_weight(shape=self.shape,
+                      initializer=tf.keras.initializers.GlorotUniform(),
+                      regularizer=tf.keras.regularizers.l2(0.05),
+                      trainable=True,
+                      name='trainable_noise')
+    # initializer=tf.keras.initializers.Zeros(),
+  def call(self, inputs):
+    return inputs + tf.keras.activations.tanh(self.noise)
+  def get_config(self):
+      config = super().get_config().copy()
+      config.update({
+          'noise_shape': self.shape,
+      })
+      return config
 
 def model(flags):
   """ Fully attentional KWS model consisting of sequential transformer blocks.
@@ -130,6 +163,14 @@ def model(flags):
 
   _, num_time_windows, num_freqs = net.shape
 
+  if flags.reprogram == 'trainable_noise':
+    trainable_noise_layer = TrainableNoiseLayer((1, num_time_windows, num_freqs))
+    net = trainable_noise_layer(net)
+  elif flags.reprogram == 'conv':
+    # conv_layer = tf.keras.layers.Conv1D(num_freqs, 1, input_shape = net.shape[1:], name='conv_reprogram')
+    conv_layer = tf.keras.layers.TimeDistributed(Dense(num_freqs))
+    net = conv_layer(net)
+
   if flags.attention_type == 'patch':
      patch_size_t, patch_size_f = utils.parse(flags.patch_size)
      num_patches = (num_time_windows // patch_size_t) * (num_freqs // patch_size_f)
@@ -144,6 +185,9 @@ def model(flags):
         prenorm=flags.prenorm,
         distill_token=distill_token,
         approximate_gelu=flags.approximate_gelu,
+        adapter_dim=flags.adapter_dim,
+        fix_transformer=flags.fix_transformer,
+        adapter_connection=flags.adapter_connection
         )
 
      patch_sig = extract_patches(net, patch_size_t, patch_size_f)
@@ -160,6 +204,9 @@ def model(flags):
         prenorm=flags.prenorm,
         distill_token=distill_token,
         approximate_gelu=flags.approximate_gelu,
+        adapter_dim=flags.adapter_dim,
+        fix_transformer=flags.fix_transformer,
+        adapter_connection=flags.adapter_connection
         )
 
     time_sig = time_transformer(net, training=flags.training)
@@ -174,7 +221,10 @@ def model(flags):
         num_patches=num_freqs,
         prenorm=flags.prenorm,
         distill_token=distill_token,
-        approximate_gelu=flags.approximate_gelu
+        approximate_gelu=flags.approximate_gelu,
+        adapter_dim=flags.adapter_dim,
+        fix_transformer=flags.fix_transformer,
+        adapter_connection=flags.adapter_connection
         )
 
     net = Permute((2, 1))(net)

@@ -31,7 +31,26 @@ def base_parser():
   Returns:
     parser
   """
+  dataset_choices = ['input_data.AudioProcessor', 'MLSW_data.MLSWProcessor', 'PATE_data.MLSW_PATE_student_ASC',
+         'PATE_data.MLSW_PATE_student', 'MLSW_PATE_student_ASC', 'input_data.LatentProcessor']
   parser = argparse.ArgumentParser()
+  parser.add_argument('--dataset_class',
+    type=str,
+    default='input_data.AudioProcessor',
+    choices=dataset_choices,
+    help='The type of dataset being used')
+  parser.add_argument('--source_dataset_class',
+    type=str,
+    default='input_data.LatentProcessor',
+    choices=dataset_choices,
+    help='The type of dataset being used')
+
+  parser.add_argument('--lang', type=str, default='en')
+  parser.add_argument('--nb_teachers', type=int, default=1, help='number of teachers for PATE')
+  parser.add_argument('--teacher_id', type=int, default=0, help='id of teacher for PATE')
+  parser.add_argument('--pate_teacher_folder', type=str, default='')
+  parser.add_argument('--lap_scale', type=float, default=0, help='scale of laplacian noise in PATE')
+  parser.add_argument('--source_path', type=str, default='', help='only valid for ASC')
   parser.add_argument(
       '--data_url',
       type=str,
@@ -39,6 +58,7 @@ def base_parser():
       default='https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_v0.02.tar.gz',
       # pylint: enable=line-too-long
       help='Location of speech training data archive on the web.')
+  parser.add_argument('--asc_type', type=str, default='', choices=['vbkt', 'nst'])
   parser.add_argument(
       '--data_dir',
       type=str,
@@ -53,11 +73,28 @@ def base_parser():
       help="""\
       Learning rate schedule: linear, exp.
       """)
+  parser.add_argument('--half_test', action='store_true', help='use half test set for training, another half for testing')
   parser.add_argument(
       '--optimizer',
       type=str,
       default='adam',
-      help='Optimizer: adam, momentum, adamw')
+      choices=['adam', 'momentum', 'adamw', 'dpsgd'],
+      help='Optimizer: adam, momentum, adamw, dpsgd')
+  parser.add_argument(
+      '--dpsgd_norm_clip',
+      type=float,
+      default=1.0,
+      help='DPSGD: l2 norm clip')
+  parser.add_argument(
+      '--dpsgd_noise_multiplier',
+      type=float,
+      default=1.1,
+      help='DPSGD: noise multiplier')
+  parser.add_argument(
+      '--dpsgd_delta',
+      type=float,
+      default=1e-5,
+      help='DPSGD: delta')
   parser.add_argument(
       '--background_volume',
       type=float,
@@ -147,6 +184,11 @@ def base_parser():
       type=int,
       default=400,
       help='How often to evaluate the training results.')
+  parser.add_argument(
+      '--AWC_layer_index',
+      type=int,
+      default=2
+  )
   parser.add_argument(
       '--learning_rate',
       type=str,

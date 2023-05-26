@@ -1,7 +1,5 @@
 # Train KT with Differential Privacy
 
-<img src="kwt.png" alt="drawing" width="200"/>
-
 This is the official repository for the paper [Differentially Private Adapters for Parameter Efficient Acoustic Modeling](https://arxiv.org/abs/2305.11360), presented at Interspeech 2023. We use the [code implemented by the ARM lab](https://github.com/ARM-software/keyword-transformer). Consider citing our paper and their paper if you find this work useful.
 
 ```
